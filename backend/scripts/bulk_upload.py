@@ -7,6 +7,11 @@ each file's YAML front matter (``department:`` / ``owner:``) and the folder.
 
     uv run python scripts/bulk_upload.py --from 03 --workers 4
     uv run python scripts/bulk_upload.py --from 03 --dry-run
+    uv run python scripts/bulk_upload.py --only README.md metadata/glossary.md
+
+Document IDs are derived from department + filename, so two files with the same name in
+the same department would overwrite each other. The first (in path order) keeps its
+name; later ones are uploaded as ``<folder>-<name>``.
 """
 
 from __future__ import annotations
@@ -53,6 +58,8 @@ ENGINEERING_OWNERS = {
     "quality": "Quality Engineering",
 }
 FOLDER_DEFAULTS = {"06-product": "Product Management"}
+# Library tooling output, not onboarding content.
+EXCLUDED = {"metadata/validation-report.md"}
 # Files whose front matter is too generic ("all") or broader than their topic.
 OVERRIDES = {
     "11-faq/it-faq.md": "IT Operations",
@@ -89,10 +96,24 @@ def department_for(path: Path) -> str:
     return department or FOLDER_DEFAULTS.get(folder, "Human Resources")
 
 
+def upload_names() -> dict[Path, str]:
+    """Upload filename per library file, unique within each department."""
+    names: dict[Path, str] = {}
+    taken: set[tuple[str, str]] = set()
+    for path in sorted(ROOT.rglob("*.md")):
+        department = department_for(path)
+        name = path.name
+        if (department, name.lower()) in taken:
+            name = f"{path.parent.name}-{path.name}"
+        taken.add((department, name.lower()))
+        names[path] = name
+    return names
+
+
 async def upload(
-    client: httpx.AsyncClient, url: str, path: Path, department: str
+    client: httpx.AsyncClient, url: str, path: Path, department: str, name: str
 ) -> tuple[str, str]:
-    files = {"files": (path.name, path.read_bytes(), "text/markdown")}
+    files = {"files": (name, path.read_bytes(), "text/markdown")}
     response = await client.post(url, data={"department": department}, files=files)
     if response.status_code != 200:
         return "failed", f"HTTP {response.status_code}: {response.text[:200]}"
@@ -107,14 +128,32 @@ async def main() -> int:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--only", nargs="+", metavar="PATH", help="upload just these library-relative files"
+    )
     args = parser.parse_args()
 
-    folders = sorted(p for p in ROOT.iterdir() if p.is_dir() and p.name >= args.start)
-    jobs = [(p, department_for(p)) for f in folders for p in sorted(f.rglob("*.md"))]
-    print(f"{len(jobs)} files from {', '.join(f.name for f in folders)}")
+    names = upload_names()
+    if args.only:
+        paths = [ROOT / p for p in args.only]
+        if missing := [p for p in paths if not p.is_file()]:
+            print("Not found: " + ", ".join(str(p) for p in missing))
+            return 1
+        print(f"{len(paths)} selected files")
+    else:
+        folders = sorted(p for p in ROOT.iterdir() if p.is_dir() and p.name >= args.start)
+        paths = [
+            p
+            for f in folders
+            for p in sorted(f.rglob("*.md"))
+            if p.relative_to(ROOT).as_posix() not in EXCLUDED
+        ]
+        print(f"{len(paths)} files from {', '.join(f.name for f in folders)}")
+    jobs = [(p, department_for(p)) for p in paths]
     if args.dry_run:
         for path, dept in jobs:
-            print(f"  {dept:<28} {path.relative_to(ROOT)}")
+            renamed = f"  (as {names[path]})" if names[path] != path.name else ""
+            print(f"  {dept:<28} {path.relative_to(ROOT)}{renamed}")
         return 0
 
     url = f"{args.api}/api/v1/rag/upload"
@@ -130,7 +169,7 @@ async def main() -> int:
         while not queue.empty():
             path, dept = queue.get_nowait()
             try:
-                status, message = await upload(client, url, path, dept)
+                status, message = await upload(client, url, path, dept, names[path])
             except httpx.HTTPError as exc:
                 status, message = "failed", f"{type(exc).__name__}: {exc}"
             done += 1
@@ -146,8 +185,10 @@ async def main() -> int:
     async with httpx.AsyncClient(timeout=httpx.Timeout(900.0, connect=10.0)) as client:
         await asyncio.gather(*(worker(client) for _ in range(args.workers)))
 
-    print(f"\nDone in {time.monotonic() - started:.0f}s: {len(jobs) - len(failures)} ok, "
-          f"{len(failures)} failed")
+    print(
+        f"\nDone in {time.monotonic() - started:.0f}s: {len(jobs) - len(failures)} ok, "
+        f"{len(failures)} failed"
+    )
     for path, message in failures:
         print(f"  FAILED {path.relative_to(ROOT)}: {message}")
     return 1 if failures else 0

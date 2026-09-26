@@ -21,9 +21,13 @@ export const CHAT_STREAM_ENDPOINT = `${API_BASE}/api/v1/chat/stream`;
 
 interface SourceRef {
   id: string;
+  chunk_id?: string;
+  document_id?: string;
   title: string;
   department: string;
+  section?: string | null;
   reference: string;
+  version?: string | null;
   url?: string | null;
 }
 
@@ -52,6 +56,10 @@ function toCitation(src: SourceRef): SourceCitationData {
     department: src.department,
     reference: src.reference,
     url: src.url ?? undefined,
+    documentId: src.document_id,
+    chunkId: src.chunk_id,
+    section: src.section ?? undefined,
+    version: src.version ?? undefined,
   };
 }
 

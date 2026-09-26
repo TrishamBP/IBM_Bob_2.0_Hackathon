@@ -1,14 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatHeader } from './ChatHeader';
 import { ChatWelcome } from './ChatWelcome';
 import { ChatMessageList } from './ChatMessageList';
-import { ChatComposer } from './ChatComposer';
+import { ChatComposer, type ChatComposerHandle } from './ChatComposer';
+import { ExampleQuestionsDrawer } from './ExampleQuestionsDrawer';
+import { SourceViewerContext } from './SourceViewerContext';
+import { SourceViewerDrawer } from './SourceViewerDrawer';
 import { useChat } from '@/hooks/useChat';
 import { clearSession } from '@/lib/auth';
+import type { SourceCitationData } from '@/types/chat';
 
 interface ChatLayoutProps {
   email: string;
@@ -21,6 +25,24 @@ export function ChatLayout({ email }: ChatLayoutProps) {
     if (typeof window === 'undefined') return true;
     return !window.matchMedia('(max-width: 1023px)').matches;
   });
+
+  const [examplesOpen, setExamplesOpen] = useState(false);
+  const composerRef = useRef<ChatComposerHandle>(null);
+  const closeExamples = useCallback(() => setExamplesOpen(false), []);
+
+  // Source viewer — the source is kept after closing so the panel slides out intact
+  const [viewedSource, setViewedSource] = useState<SourceCitationData | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const openSource = useCallback((source: SourceCitationData) => {
+    setViewedSource(source);
+    setSourceOpen(true);
+  }, []);
+  const closeSource = useCallback(() => setSourceOpen(false), []);
+
+  function handleInsertExample(text: string) {
+    setExamplesOpen(false);
+    composerRef.current?.setDraft(text);
+  }
 
   // Keep sidebar state in sync as the viewport is resized
   useEffect(() => {
@@ -72,89 +94,103 @@ export function ChatLayout({ email }: ChatLayoutProps) {
 
   return (
     /* Full-viewport container — flex row */
-    <div className="flex h-screen overflow-hidden bg-[#081426]">
-      {/* ------------------------------------------------------------------ */}
-      {/* Sidebar overlay (mobile)                                             */}
-      {/* ------------------------------------------------------------------ */}
-      {sidebarOpen && (
+    <SourceViewerContext.Provider value={openSource}>
+      <div className="flex h-screen overflow-hidden bg-[#081426]">
+        {/* ------------------------------------------------------------------ */}
+        {/* Sidebar overlay (mobile)                                             */}
+        {/* ------------------------------------------------------------------ */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+            aria-hidden="true"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Sidebar                                                              */}
+        {/* ------------------------------------------------------------------ */}
         <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-          aria-hidden="true"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Sidebar                                                              */}
-      {/* ------------------------------------------------------------------ */}
-      <div
-        className={[
-          'fixed inset-y-0 left-0 z-40 w-[270px] transition-transform duration-200 ease-in-out',
-          'lg:relative lg:translate-x-0 lg:z-auto',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-        ].join(' ')}
-        aria-hidden={!sidebarOpen}
-      >
-        <ChatSidebar
-          conversations={state.conversations}
-          activeConversationId={state.activeConversationId}
-          email={email}
-          onNewConversation={handleNewConversation}
-          onSelectConversation={handleSelectConversation}
-          onRenameConversation={renameConversation}
-          onDeleteConversation={deleteConversation}
-          onLogout={handleLogout}
-          onClose={() => setSidebarOpen(false)}
-        />
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Main area                                                            */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Header */}
-        <ChatHeader
-          conversationTitle={activeConversation?.title ?? null}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((v) => !v)}
-        />
-
-        {/* Message area */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {hasMessages ? (
-            /* Message list — scrollable */
-            <div className="flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-[850px]">
-                <ChatMessageList
-                  conversation={activeConversation!}
-                  isLoading={state.isLoading}
-                  onRegenerate={() =>
-                    activeConversation && regenerateLastResponse(activeConversation.id)
-                  }
-                  onFeedback={(msgId, value) =>
-                    activeConversation &&
-                    setMessageFeedback(activeConversation.id, msgId, value)
-                  }
-                />
-              </div>
-            </div>
-          ) : (
-            /* Welcome screen — scrollable */
-            <div className="flex-1 overflow-y-auto">
-              <ChatWelcome
-                email={email}
-                onSelectQuestion={(q) => sendMessage(q, activeConversation?.id ?? undefined)}
-              />
-            </div>
-          )}
-
-          {/* Composer — always at bottom, never overlaps messages */}
-          <ChatComposer
-            onSend={handleSendMessage}
-            disabled={state.isLoading}
+          className={[
+            'fixed inset-y-0 left-0 z-40 w-[270px] transition-transform duration-200 ease-in-out',
+            'lg:relative lg:translate-x-0 lg:z-auto',
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          ].join(' ')}
+          aria-hidden={!sidebarOpen}
+        >
+          <ChatSidebar
+            conversations={state.conversations}
+            activeConversationId={state.activeConversationId}
+            email={email}
+            onNewConversation={handleNewConversation}
+            onSelectConversation={handleSelectConversation}
+            onRenameConversation={renameConversation}
+            onDeleteConversation={deleteConversation}
+            onLogout={handleLogout}
+            onClose={() => setSidebarOpen(false)}
           />
         </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Main area                                                            */}
+        {/* ------------------------------------------------------------------ */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Header */}
+          <ChatHeader
+            conversationTitle={activeConversation?.title ?? null}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            onOpenExamples={() => setExamplesOpen(true)}
+          />
+
+          {/* Message area */}
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {hasMessages ? (
+              /* Message list — scrollable */
+              <div className="flex-1 overflow-y-auto">
+                <div className="mx-auto max-w-[850px]">
+                  <ChatMessageList
+                    conversation={activeConversation!}
+                    isLoading={state.isLoading}
+                    onRegenerate={() =>
+                      activeConversation && regenerateLastResponse(activeConversation.id)
+                    }
+                    onFeedback={(msgId, value) =>
+                      activeConversation &&
+                      setMessageFeedback(activeConversation.id, msgId, value)
+                    }
+                  />
+                </div>
+              </div>
+            ) : (
+              /* Welcome screen — scrollable */
+              <div className="flex-1 overflow-y-auto">
+                <ChatWelcome
+                  email={email}
+                  onSelectQuestion={(q) => sendMessage(q, activeConversation?.id ?? undefined)}
+                />
+              </div>
+            )}
+
+            {/* Composer — always at bottom, never overlaps messages */}
+            <ChatComposer
+              ref={composerRef}
+              onSend={handleSendMessage}
+              disabled={state.isLoading}
+            />
+          </div>
+        </div>
+
+        {/* Example questions — slides in from the right */}
+        <ExampleQuestionsDrawer
+          isOpen={examplesOpen}
+          onClose={closeExamples}
+          onInsert={handleInsertExample}
+        />
+
+        {/* Cited document — slides in from the right */}
+        <SourceViewerDrawer isOpen={sourceOpen} source={viewedSource} onClose={closeSource} />
       </div>
-    </div>
+    </SourceViewerContext.Provider>
   );
 }

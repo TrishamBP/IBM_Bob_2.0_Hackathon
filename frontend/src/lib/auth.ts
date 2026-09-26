@@ -1,6 +1,6 @@
 import type { MockSession, UserRole } from '@/types/auth';
 
-const SESSION_KEY = 'acme_mock_session';
+export const SESSION_KEY = 'acme_mock_session';
 
 export function setSession(session: MockSession): void {
   if (typeof window === 'undefined') return;

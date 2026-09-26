@@ -15,10 +15,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, s
 
 from src.config import get_settings
 from src.rag.departments import DEPARTMENTS
+from src.rag.documents import build_document_view
 from src.rag.fireworks import FireworksError
 from src.rag.ingestion import FileIngestResult, StageResult, safe_filename
 from src.rag.router.router import RouterCompatibilityError
 from src.rag.schemas import (
+    DocumentView,
     FileError,
     FileResult,
     IngestionStages,
@@ -159,3 +161,16 @@ async def route_query(request: Request, body: RouteRequest) -> RouteResponse:
         logger.warning("Fireworks error during routing: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Embedding service error") from exc
     return RouteResponse.model_validate(result)
+
+
+@router.get("/documents/{document_id}", response_model=DocumentView)
+async def get_document(request: Request, document_id: str) -> DocumentView:
+    """The current version of a document, rebuilt from its chunks (citation viewer)."""
+    services = _services(request)
+    chunks = await services.store.get_document_chunks(document_id)
+    if not chunks:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "This document is no longer available. It may have been removed or replaced.",
+        )
+    return build_document_view(document_id, chunks)

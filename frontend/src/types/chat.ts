@@ -11,8 +11,13 @@ export interface SourceCitationData {
   department: string;
   /** e.g. "IT Handbook, Section 3.2" */
   reference: string;
-  /** Optional URL — will be populated by the RAG pipeline in a future phase. */
+  /** Optional URL — only when the document has a real link. */
   url?: string;
+  /** Stored document and chunk behind the citation; used by the source viewer. */
+  documentId?: string;
+  chunkId?: string;
+  section?: string;
+  version?: string;
 }
 
 export interface ChatMessage {

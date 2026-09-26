@@ -4,20 +4,19 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Box, LogOut, Users, FileUp, Upload } from 'lucide-react';
-import { getSession, clearSession } from '@/lib/auth';
+import { clearSession } from '@/lib/auth';
 import { DocumentUploadModal } from '@/components/hr/DocumentUploadModal';
-import type { MockSession } from '@/types/auth';
+import { useSession } from '@/hooks/useSession';
 
 export default function HRDashboardPage() {
   const router = useRouter();
-  // Lazy initializer — read session once on mount, no setState-in-effect
-  const [session] = useState<MockSession | null>(() =>
-    typeof window !== 'undefined' ? getSession() : null
-  );
+  // undefined while hydrating, then the stored session (or null)
+  const session = useSession();
   const [modalOpen, setModalOpen] = useState(false);
 
   // Redirect if unauthenticated or wrong role
   useEffect(() => {
+    if (session === undefined) return;
     if (!session || session.role !== 'hr') {
       router.replace(session ? '/employee/dashboard' : '/hr/login');
     }

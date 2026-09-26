@@ -179,6 +179,24 @@ class ChromaStore:
         metadatas = result.get("metadatas") or []
         return metadatas[0].get("document_version") if metadatas else None
 
+    async def get_document_chunks(self, document_id: str) -> list[tuple[str, str, dict[str, Any]]]:
+        """Every stored chunk of one document as ``(id, text, metadata)``, in reading order."""
+        collection = await self._coll()
+        result = await asyncio.to_thread(
+            collection.get, where={"document_id": document_id}, include=["documents", "metadatas"]
+        )
+        chunks = [
+            (i, d or "", dict(m or {}))
+            for i, d, m in zip(
+                result.get("ids") or [],
+                result.get("documents") or [],
+                result.get("metadatas") or [],
+                strict=True,
+            )
+        ]
+        chunks.sort(key=lambda c: c[2].get("chunk_index", 0))
+        return chunks
+
     async def count_document_chunks(self, document_id: str, version: str) -> int:
         collection = await self._coll()
         result = await asyncio.to_thread(

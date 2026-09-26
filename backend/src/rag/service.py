@@ -144,6 +144,10 @@ def build_chat(
             low_confidence_threshold=settings.chat_low_confidence_threshold,
             max_filter_departments=settings.chat_max_filter_departments,
             max_concurrent_streams=settings.chat_max_concurrent_streams,
+            answer_max_tokens=settings.fireworks_answer_max_tokens,
+            answer_target_tokens=min(
+                settings.fireworks_answer_target_tokens, settings.fireworks_answer_max_tokens // 2
+            ),
         ),
         preprocess_extra=extra,
     )

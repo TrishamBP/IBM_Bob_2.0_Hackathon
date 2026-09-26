@@ -93,6 +93,8 @@ class ChatConfig:
     max_filter_departments: int = 3
     max_concurrent_streams: int = 8
     disconnect_check_every: int = 8  # tokens
+    answer_max_tokens: int = 12000  # reasoning + answer, as sent to the model
+    answer_target_tokens: int = 3000
 
 
 def user_safe_error(exc: BaseException) -> str:
@@ -477,7 +479,12 @@ class ChatService:
         resolved: str,
         retrieval: RetrievalResult,
     ) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": ANSWER_SYSTEM}]
+        system = ANSWER_SYSTEM.format(
+            max_tokens=self.config.answer_max_tokens,
+            target_tokens=self.config.answer_target_tokens,
+            target_words=self.config.answer_target_tokens * 3 // 4,
+        )
+        messages = [{"role": "system", "content": system}]
         for m in history:
             # Old citation markers refer to old sources; drop them from the history.
             content = _MARKERS.sub("", m.content) if m.role == "assistant" else m.content

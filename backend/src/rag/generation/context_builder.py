@@ -65,7 +65,7 @@ def _real_url(meta: dict[str, Any]) -> str | None:
     return None
 
 
-def _section(meta: dict[str, Any]) -> str | None:
+def section_label(meta: dict[str, Any]) -> str | None:
     path = str(meta.get("heading_path_text") or "").strip()
     title = str(meta.get("title") or "")
     parts = [p.strip() for p in path.split(" > ") if p.strip()]
@@ -103,7 +103,7 @@ def build_sources(chunks: list[Candidate], token_budget: int) -> list[Source]:
                 document_id=cand.document_id,
                 title=str(meta.get("title") or meta.get("source_filename") or "Untitled"),
                 department=str(meta.get("department") or ""),
-                section=_section(meta),
+                section=section_label(meta),
                 version=str(version) if version else None,
                 source_filename=meta.get("source_filename"),
                 page_start=_int(meta.get("page_start")),

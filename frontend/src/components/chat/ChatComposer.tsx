@@ -1,16 +1,36 @@
 'use client';
 
-import { useRef, useState, KeyboardEvent } from 'react';
+import { useImperativeHandle, useRef, useState, KeyboardEvent, Ref } from 'react';
 import { ArrowUp } from 'lucide-react';
+
+export interface ChatComposerHandle {
+  /** Replace the draft text and focus the composer. */
+  setDraft: (text: string) => void;
+}
 
 interface ChatComposerProps {
   onSend: (content: string) => void;
   disabled?: boolean;
+  ref?: Ref<ChatComposerHandle>;
 }
 
-export function ChatComposer({ onSend, disabled = false }: ChatComposerProps) {
+export function ChatComposer({ onSend, disabled = false, ref }: ChatComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    setDraft(text: string) {
+      setValue(text);
+      // Resize and focus after React has applied the new value
+      requestAnimationFrame(() => {
+        handleInput();
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(text.length, text.length);
+      });
+    },
+  }));
 
   const canSend = value.trim().length > 0 && !disabled;
 

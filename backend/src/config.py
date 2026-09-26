@@ -57,7 +57,9 @@ class Settings(BaseSettings):
     # Employee chat (POST /api/v1/chat/stream)
     # GLM 5.3 Flash writes the streamed Markdown answer.
     fireworks_answer_model: str = "accounts/fireworks/models/glm-5p3-flash"
-    fireworks_answer_max_tokens: int = Field(default=2048, ge=128)  # includes reasoning
+    fireworks_answer_max_tokens: int = Field(default=12000, ge=128)  # includes reasoning
+    # Answer length the prompt asks for; the rest of max_tokens is left for reasoning.
+    fireworks_answer_target_tokens: int = Field(default=3000, ge=100)
     fireworks_answer_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     fireworks_answer_timeout_seconds: float = Field(default=60.0, ge=1.0)  # per network read
     fireworks_answer_reasoning_effort: str = ""  # "" to omit the parameter

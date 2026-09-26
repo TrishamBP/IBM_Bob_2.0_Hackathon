@@ -86,3 +86,27 @@ class RouteResponse(BaseModel):
     predictions: list[DepartmentScore]
     retrieved_chunks: list[RetrievedChunk]
     diagnostics: dict[str, Any]
+
+
+class DocumentChunkView(BaseModel):
+    chunk_id: str
+    index: int
+    section: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    markdown: str  # original chunk text; headings restored as Markdown
+
+
+class DocumentView(BaseModel):
+    """A stored document rebuilt from its chunks, for the citation viewer."""
+
+    document_id: str
+    title: str
+    department: str
+    version: str | None = None
+    effective_date: str | None = None
+    source_filename: str | None = None
+    file_type: str | None = None
+    page_count: int | None = None
+    ingested_at: str | None = None
+    chunks: list[DocumentChunkView]

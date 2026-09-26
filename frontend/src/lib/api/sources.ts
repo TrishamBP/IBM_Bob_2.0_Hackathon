@@ -6,8 +6,7 @@
  * 404 (string `detail`) when the document was removed.
  */
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '') ?? 'http://localhost:8000';
+import { API_BASE } from './config';
 
 export interface SourceDocumentChunk {
   chunk_id: string;

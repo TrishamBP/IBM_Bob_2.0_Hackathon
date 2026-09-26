@@ -1,0 +1,2 @@
+# Keep local env files out of CLI deployments; set variables in the Vercel dashboard instead.
+.env*

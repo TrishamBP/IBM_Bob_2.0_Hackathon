@@ -1,0 +1,180 @@
+# ACME Onboard monorepo — root ignore rules (frontend/, backend/, docs/).
+# frontend/.gitignore and backend/.gitignore add project-local rules on top of these.
+# Intentionally tracked: source, docs, synthetic router dataset, the active router
+# model, lockfiles (uv.lock, package-lock.json) and .env.example templates.
+
+# ─── Secrets and environment files ─────────────────────────────────────────
+**/.env
+**/.env.*
+**/*.env
+!**/.env.example
+!**/.env.*.example
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+
+# Cloud / service-account credentials and local auth tokens
+**/service-account*.json
+**/*service_account*.json
+**/*-credentials.json
+**/credentials.json
+**/client_secret*.json
+**/gcloud-key*.json
+.aws/
+.azure/
+.gcloud/
+.kube/
+kubeconfig*
+.netrc
+.npmrc
+.pypirc
+.huggingface/
+**/.cache/huggingface/
+secrets/
+*.secret
+*.secrets
+
+# Local deployment credentials / state
+.vercel/
+.netlify/
+.terraform/
+*.tfstate
+*.tfstate.*
+.fly/
+
+# ─── Next.js / Node.js ─────────────────────────────────────────────────────
+node_modules/
+.next/
+.turbo/
+out/
+dist/
+build/
+coverage/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.npm/
+.pnpm-store/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# ─── Python / FastAPI ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+pip-wheel-metadata/
+.ipynb_checkpoints/
+
+# ─── RAG and machine learning (local / generated only) ─────────────────────
+# Local ChromaDB stores (keep only the .gitkeep placeholder)
+backend/data/chroma/*
+!backend/data/chroma/.gitkeep
+**/chroma_db/
+**/chromadb/
+*.sqlite3
+*.sqlite3-journal
+# Generated BM25 / vector indexes
+**/bm25_index*/
+*.bm25
+*.faiss
+# Embedding caches and temporary embeddings
+backend/src/rag/router/.cache/
+**/embeddings_cache/
+# Router training staging and archived (superseded) model versions
+backend/src/rag/router/models/.staging/
+backend/src/rag/router/evaluation/.staging/
+backend/src/rag/router/models/archive/
+backend/src/rag/router/evaluation/archive/
+# Downloaded checkpoints / large model weights
+**/checkpoints/
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.h5
+mlruns/
+wandb/
+# Generated evaluation outputs that may contain real queries or document text
+**/eval_outputs/
+**/eval_results/
+
+# ─── Chat sessions, uploads, extracted text ────────────────────────────────
+# JSON conversation sessions (CHAT_DIR)
+backend/data/chats/
+**/chat_sessions/
+# Uploaded employee documents (DOCUMENTS_DIR) — keep only the placeholder
+backend/data/documents/*
+!backend/data/documents/.gitkeep
+**/uploads/
+**/tmp_uploads/
+# Locally extracted document text
+**/extracted/
+**/extracted_text/
+# Logs (may contain user messages or document content)
+*.log
+logs/
+
+# ─── Development tools / OS ────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.iml
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.claude/settings.local.json
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+tmp/
+temp/
+*.tmp
+*.bak
+~$*

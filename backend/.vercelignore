@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+.venv/
+data/chroma/
+data/chats/
+data/documents/*
+!data/documents/.gitkeep
+src/rag/router/.cache/

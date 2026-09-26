@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# uv / virtualenv
+.venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local ChromaDB data
+data/chroma/*
+!data/chroma/.gitkeep
+
+# Chat sessions (CHAT_DIR) and uploaded documents (DOCUMENTS_DIR)
+data/chats/
+data/documents/*
+!data/documents/.gitkeep
+
+# Logs may contain user messages or document text
+*.log
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Router training caches / staging
+src/rag/router/.cache/
+src/rag/router/models/.staging/
+src/rag/router/evaluation/.staging/
+# Superseded router versions (the active model in models/ stays tracked)
+src/rag/router/models/archive/
+src/rag/router/evaluation/archive/

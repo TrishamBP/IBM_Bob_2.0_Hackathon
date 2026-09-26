@@ -1,0 +1,123 @@
+{
+  "model_version": "2.0.0",
+  "training_date": "2026-09-26T06:50:09+00:00",
+  "embedding_provider": "fireworks",
+  "embedding_model_name": "fireworks/qwen3-embedding-8b",
+  "embedding_dimensions": 356,
+  "query_instruction": "Given an ACME Corp employee onboarding question, retrieve relevant internal documentation passages that answer it",
+  "normalized_embeddings": true,
+  "department_labels": [
+    "AI and Machine Learning",
+    "Cloud Platform and DevOps",
+    "Customer Support",
+    "Finance",
+    "Human Resources",
+    "IT Operations",
+    "Information Security",
+    "Legal and Compliance",
+    "Product Management",
+    "Quality Engineering",
+    "Sales",
+    "Software Engineering",
+    "UX and Design"
+  ],
+  "dataset_size": 2600,
+  "dataset_distribution": {
+    "Human Resources": 200,
+    "IT Operations": 200,
+    "Information Security": 200,
+    "Software Engineering": 200,
+    "AI and Machine Learning": 200,
+    "Cloud Platform and DevOps": 200,
+    "Product Management": 200,
+    "UX and Design": 200,
+    "Quality Engineering": 200,
+    "Sales": 200,
+    "Customer Support": 200,
+    "Finance": 200,
+    "Legal and Compliance": 200
+  },
+  "split_sizes": {
+    "train": 1831,
+    "validation": 391,
+    "test": 378
+  },
+  "split_seed": 42,
+  "training_params": {
+    "objective": "multi:softprob",
+    "n_estimators": 1500,
+    "max_depth": 3,
+    "learning_rate": 0.1,
+    "subsample": 0.8,
+    "colsample_bytree": 0.4,
+    "min_child_weight": 1,
+    "reg_lambda": 5.0,
+    "eval_metric": [
+      "merror",
+      "mlogloss"
+    ],
+    "random_state": 42,
+    "n_jobs": -1,
+    "tree_method": "hist",
+    "early_stopping_rounds": 50
+  },
+  "initial_training_params": {
+    "objective": "multi:softprob",
+    "n_estimators": 500,
+    "max_depth": 5,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "eval_metric": [
+      "merror",
+      "mlogloss"
+    ],
+    "random_state": 42,
+    "n_jobs": -1,
+    "tree_method": "hist",
+    "early_stopping_rounds": 30
+  },
+  "tuning": "Hyperparameters carried over from v1 (selected on validation only); test set not used for any decision.",
+  "best_iteration": 1265,
+  "best_validation_mlogloss": 0.4641533032737543,
+  "calibration": {
+    "method": "temperature_scaling",
+    "temperature": 0.8014774522569978
+  },
+  "validation_metrics": {
+    "accuracy": 0.8645,
+    "top3_accuracy": 0.9821,
+    "macro_precision": 0.8685,
+    "macro_recall": 0.8656,
+    "macro_f1": 0.8648,
+    "weighted_f1": 0.8643,
+    "mean_confidence": 0.8067
+  },
+  "test_metrics": {
+    "accuracy": 0.8095,
+    "top3_accuracy": 0.955,
+    "macro_precision": 0.8181,
+    "macro_recall": 0.8109,
+    "macro_f1": 0.8066,
+    "weighted_f1": 0.8064,
+    "mean_confidence": 0.8233
+  },
+  "previous_model": {
+    "model_version": "1.0.0",
+    "embedding_model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    "test_metrics": {
+      "accuracy": 0.672,
+      "top3_accuracy": 0.9021,
+      "macro_precision": 0.684,
+      "macro_recall": 0.6745,
+      "macro_f1": 0.6733,
+      "weighted_f1": 0.6716,
+      "mean_confidence": 0.697
+    }
+  },
+  "library_versions": {
+    "xgboost": "3.4.1",
+    "scikit-learn": "1.9.1",
+    "python": "3.12.12"
+  }
+}

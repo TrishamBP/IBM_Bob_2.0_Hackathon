@@ -19,10 +19,6 @@ htmlcov/
 .env.*
 !.env.example
 
-# Local ChromaDB data
-data/chroma/*
-!data/chroma/.gitkeep
-
 # Chat sessions (CHAT_DIR) and uploaded documents (DOCUMENTS_DIR)
 data/chats/
 data/documents/*

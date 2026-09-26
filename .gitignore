@@ -107,13 +107,13 @@ pip-wheel-metadata/
 .ipynb_checkpoints/
 
 # ─── RAG and machine learning (local / generated only) ─────────────────────
-# Local ChromaDB stores (keep only the .gitkeep placeholder)
-backend/data/chroma/*
-!backend/data/chroma/.gitkeep
+# Other local ChromaDB stores. backend/data/chroma is tracked: it is the pre-built
+# demo index, so deployments work without re-uploading and re-embedding the library.
 **/chroma_db/
 **/chromadb/
 *.sqlite3
 *.sqlite3-journal
+!backend/data/chroma/chroma.sqlite3
 # Generated BM25 / vector indexes
 **/bm25_index*/
 *.bm25

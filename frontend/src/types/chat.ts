@@ -39,6 +39,8 @@ export interface Conversation {
   createdAt: number; // Unix ms
   updatedAt: number; // Unix ms
   messages: ChatMessage[];
+  /** Backend conversation id, set after the first message is sent. */
+  serverId?: string;
 }
 
 // ---------------------------------------------------------------------------

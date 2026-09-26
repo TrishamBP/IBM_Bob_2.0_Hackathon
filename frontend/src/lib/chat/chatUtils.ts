@@ -148,6 +148,5 @@ export function createAssistantPlaceholder(): ChatMessage {
     content: '',
     timestamp: Date.now(),
     status: 'pending',
-    isMock: true,
   };
 }

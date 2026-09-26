@@ -9,7 +9,7 @@ import {
   titleFromMessage,
 } from '@/lib/chat/chatUtils';
 import { loadConversations, saveConversations } from '@/lib/chat/chatStorage';
-import { getMockAssistantResponse } from '@/lib/chat/mockAssistant';
+import { streamChat } from '@/lib/api/chat';
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -141,9 +141,68 @@ export function useChat(email: string) {
     dispatch({ type: 'DELETE_CONVERSATION', id });
   }, []);
 
+  /** Applies `patch` to one message of a conversation, using fresh state. */
+  const patchMessage = useCallback(
+    (convId: string, messageId: string, patch: Partial<ChatMessage>, convPatch?: Partial<Conversation>) => {
+      const conv = stateRef.current.conversations.find((c) => c.id === convId);
+      if (!conv) return;
+      const updated: Conversation = {
+        ...conv,
+        ...convPatch,
+        messages: conv.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+      };
+      // Keep the ref in sync so rapid token updates don't clobber each other.
+      stateRef.current = {
+        ...stateRef.current,
+        conversations: stateRef.current.conversations.map((c) => (c.id === convId ? updated : c)),
+      };
+      dispatch({ type: 'UPDATE_CONVERSATION', conversation: updated });
+    },
+    []
+  );
+
+  /** Streams the backend answer for `content` into the placeholder message. */
+  const runTurn = useCallback(
+    async (convId: string, placeholderId: string, content: string) => {
+      dispatch({ type: 'SET_LOADING', loading: true });
+      try {
+        const conv = stateRef.current.conversations.find((c) => c.id === convId);
+        const response = await streamChat({
+          email,
+          conversationId: conv?.serverId,
+          message: content,
+          onSession: (serverId) => patchMessage(convId, placeholderId, {}, { serverId }),
+          onToken: (text) => patchMessage(convId, placeholderId, { content: text, status: 'streaming' }),
+        });
+        patchMessage(
+          convId,
+          placeholderId,
+          {
+            content: response.content,
+            status: 'complete',
+            sources: response.sources,
+            timestamp: Date.now(),
+          },
+          { serverId: response.conversationId, updatedAt: Date.now() }
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+        patchMessage(convId, placeholderId, {
+          content: message,
+          status: 'error',
+          timestamp: Date.now(),
+        });
+        dispatch({ type: 'SET_ERROR', error: message });
+      } finally {
+        dispatch({ type: 'SET_LOADING', loading: false });
+      }
+    },
+    [email, patchMessage]
+  );
+
   /**
    * Resolves or creates a conversation, sends the user message,
-   * then appends the assistant response.
+   * then streams the assistant response into a placeholder.
    */
   const sendMessage = useCallback(
     async (content: string, conversationId?: string) => {
@@ -172,124 +231,53 @@ export function useChat(email: string) {
         messages: [...conv.messages, userMsg, placeholder],
       };
 
+      stateRef.current = {
+        ...stateRef.current,
+        conversations: stateRef.current.conversations.some((c) => c.id === convId)
+          ? stateRef.current.conversations.map((c) => (c.id === convId ? optimisticConv : c))
+          : [optimisticConv, ...stateRef.current.conversations],
+      };
       dispatch({ type: 'UPDATE_CONVERSATION', conversation: optimisticConv });
-      dispatch({ type: 'SET_LOADING', loading: true });
 
-      try {
-        const historyForApi = optimisticConv.messages
-          .filter((m) => m.status === 'complete' && m.role === 'user')
-          .map((m) => ({ role: m.role, content: m.content }));
-
-        const response = await getMockAssistantResponse({
-          conversationId: convId!,
-          messages: historyForApi,
-        });
-
-        // Read fresh state via ref to apply the update
-        const freshConv = stateRef.current.conversations.find((c) => c.id === convId);
-        if (freshConv) {
-          const assistantMsg: ChatMessage = {
-            ...placeholder,
-            content: response.content,
-            status: 'complete',
-            sources: response.sources,
-            isMock: response.isMock,
-            timestamp: Date.now(),
-          };
-          const finalConv: Conversation = {
-            ...freshConv,
-            updatedAt: Date.now(),
-            messages: freshConv.messages.map((m) =>
-              m.id === placeholder.id ? assistantMsg : m
-            ),
-          };
-          dispatch({ type: 'UPDATE_CONVERSATION', conversation: finalConv });
-        }
-      } catch (err) {
-        const freshConv = stateRef.current.conversations.find((c) => c.id === convId);
-        if (freshConv) {
-          const errMsg: ChatMessage = {
-            ...placeholder,
-            content: 'Something went wrong. Please try again.',
-            status: 'error',
-            timestamp: Date.now(),
-          };
-          dispatch({
-            type: 'UPDATE_CONVERSATION',
-            conversation: {
-              ...freshConv,
-              messages: freshConv.messages.map((m) =>
-                m.id === placeholder.id ? errMsg : m
-              ),
-            },
-          });
-        }
-        dispatch({
-          type: 'SET_ERROR',
-          error: err instanceof Error ? err.message : 'Unknown error',
-        });
-      } finally {
-        dispatch({ type: 'SET_LOADING', loading: false });
-      }
+      await runTurn(convId!, placeholder.id, content.trim());
     },
-    [] // stateRef is always fresh — no deps needed
+    [runTurn]
   );
 
-  /** Regenerate the last assistant message. */
-  const regenerateLastResponse = useCallback(async (conversationId: string) => {
-    if (stateRef.current.isLoading) return;
-    const conv = stateRef.current.conversations.find((c) => c.id === conversationId);
-    if (!conv || conv.messages.length === 0) return;
+  /** Regenerate the last assistant message by re-asking the last user question. */
+  const regenerateLastResponse = useCallback(
+    async (conversationId: string) => {
+      if (stateRef.current.isLoading) return;
+      const conv = stateRef.current.conversations.find((c) => c.id === conversationId);
+      if (!conv || conv.messages.length === 0) return;
 
-    // Drop the last assistant message
-    const withoutLast = conv.messages.slice(0, -1);
-    const placeholder = createAssistantPlaceholder();
+      const lastUser = [...conv.messages].reverse().find((m) => m.role === 'user');
+      if (!lastUser) return;
 
-    const rebuiltConv: Conversation = {
-      ...conv,
-      updatedAt: Date.now(),
-      messages: [...withoutLast, placeholder],
-    };
-    dispatch({ type: 'UPDATE_CONVERSATION', conversation: rebuiltConv });
-    dispatch({ type: 'SET_LOADING', loading: true });
+      // Drop the last assistant message
+      const withoutLast =
+        conv.messages[conv.messages.length - 1].role === 'assistant'
+          ? conv.messages.slice(0, -1)
+          : conv.messages;
+      const placeholder = createAssistantPlaceholder();
 
-    try {
-      const historyForApi = withoutLast
-        .filter((m) => m.role === 'user')
-        .map((m) => ({ role: m.role, content: m.content }));
+      const rebuiltConv: Conversation = {
+        ...conv,
+        updatedAt: Date.now(),
+        messages: [...withoutLast, placeholder],
+      };
+      stateRef.current = {
+        ...stateRef.current,
+        conversations: stateRef.current.conversations.map((c) =>
+          c.id === conversationId ? rebuiltConv : c
+        ),
+      };
+      dispatch({ type: 'UPDATE_CONVERSATION', conversation: rebuiltConv });
 
-      const response = await getMockAssistantResponse({
-        conversationId,
-        messages: historyForApi,
-      });
-
-      const freshConv = stateRef.current.conversations.find((c) => c.id === conversationId);
-      if (freshConv) {
-        const assistantMsg: ChatMessage = {
-          ...placeholder,
-          content: response.content,
-          status: 'complete',
-          sources: response.sources,
-          isMock: response.isMock,
-          timestamp: Date.now(),
-        };
-        dispatch({
-          type: 'UPDATE_CONVERSATION',
-          conversation: {
-            ...freshConv,
-            updatedAt: Date.now(),
-            messages: freshConv.messages.map((m) =>
-              m.id === placeholder.id ? assistantMsg : m
-            ),
-          },
-        });
-      }
-    } catch {
-      dispatch({ type: 'SET_ERROR', error: 'Regeneration failed. Please try again.' });
-    } finally {
-      dispatch({ type: 'SET_LOADING', loading: false });
-    }
-  }, []);
+      await runTurn(conversationId, placeholder.id, lastUser.content);
+    },
+    [runTurn]
+  );
 
   /** Set thumbs up/down feedback on a message. */
   const setMessageFeedback = useCallback(

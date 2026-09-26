@@ -11,6 +11,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from src.observability import observe, update_span
 from src.rag.fireworks.client import FireworksClient, FireworksResponseError
 
 
@@ -45,6 +46,7 @@ class FireworksReranker:
         self.task = task
         self.timeout = timeout
 
+    @observe("tool", name="rerank")
     async def rerank[T](
         self, query: str, items: Sequence[T], texts: Sequence[str]
     ) -> list[RerankResult[T]]:
@@ -73,7 +75,15 @@ class FireworksReranker:
         body = await self.client.post_json(self.url, payload, timeout=self.timeout)
         scores = parse_rerank_response(body, expected_count=len(texts))
         results = [RerankResult(items[i], i, score) for i, score in scores.items()]
-        return sorted(results, key=lambda r: r.relevance_score, reverse=True)
+        results.sort(key=lambda r: r.relevance_score, reverse=True)
+        update_span(
+            input=query,
+            output=f"{len(results)} scored passages",
+            model=self.model,
+            candidates=len(texts),
+            max_score=results[0].relevance_score if results else None,
+        )
+        return results
 
 
 def parse_rerank_response(body: dict, *, expected_count: int) -> dict[int, float]:

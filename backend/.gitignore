@@ -40,3 +40,8 @@ src/rag/router/evaluation/.staging/
 # Superseded router versions (the active model in models/ stays tracked)
 src/rag/router/models/archive/
 src/rag/router/evaluation/archive/
+
+# Evaluation output (answers from local runs) and generated goldens / deepeval cache
+evals/results/
+evals/datasets/synthetic.json
+.deepeval/

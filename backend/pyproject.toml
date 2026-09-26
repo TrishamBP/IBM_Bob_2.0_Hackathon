@@ -32,6 +32,9 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.9",
 ]
+eval = [
+    "deepeval>=4.2.6",
+]
 
 [tool.ruff]
 line-length = 100

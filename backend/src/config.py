@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     evidence_sufficient_similarity: float = Field(default=0.45, ge=-1.0, le=1.0)
     evidence_sufficient_bm25: float = Field(default=6.0, ge=0.0)
 
+    # LLM tracing via deepeval, a dev-only dependency (`uv sync --group eval`). Each chat
+    # turn prints a span tree to the terminal; a no-op when deepeval is not installed.
+    tracing_enabled: bool = True
+    tracing_terminal: bool = True
+    tracing_preview_chars: int = Field(default=160, ge=0, le=4000)
+
     documents_dir: str = "data/documents"
     chroma_persist_dir: str = "data/chroma"
     chroma_collection: str = "acme_onboarding_v2"

@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.observability import observe, update_llm
 from src.rag.fireworks.client import FireworksClient
 
 
@@ -41,6 +42,7 @@ class AnswerLLM:
         self.timeout = timeout
         self.reasoning_effort = reasoning_effort
 
+    @observe("llm", name="answer_generation")
     async def stream(
         self, messages: list[dict[str, str]], stats: GenerationStats | None = None
     ) -> AsyncIterator[str]:
@@ -52,17 +54,32 @@ class AnswerLLM:
         }
         if self.reasoning_effort:
             payload["reasoning_effort"] = self.reasoning_effort
+        stats = stats if stats is not None else GenerationStats()
+        parts: list[str] = []
+        update_llm(
+            model=self.model,
+            input=messages[-1]["content"].rsplit("</documents>", 1)[-1].strip(),
+            messages=len(messages),
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
         async for event in self.client.stream_sse(
             "chat/completions", payload, timeout=self.timeout
         ):
-            if stats is not None:
-                stats.model = event.get("model") or stats.model
-                if isinstance(event.get("usage"), dict):
-                    stats.usage = event["usage"]
+            stats.model = event.get("model") or stats.model
+            if isinstance(event.get("usage"), dict):
+                stats.usage = event["usage"]
             for choice in event.get("choices") or []:
                 delta = choice.get("delta") or {}
                 content = delta.get("content")
                 if isinstance(content, str) and content:
+                    parts.append(content)
                     yield content
-                if choice.get("finish_reason") and stats is not None:
+                if choice.get("finish_reason"):
                     stats.finish_reason = choice["finish_reason"]
+        update_llm(
+            model=stats.model or self.model,
+            usage=stats.usage,
+            output="".join(parts),
+            finish_reason=stats.finish_reason,
+        )

@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from src.observability import observe, update_llm
 from src.rag.fireworks.client import FireworksClient, FireworksResponseError
 
 logger = logging.getLogger(__name__)
@@ -87,8 +88,7 @@ class FireworksLLM:
             (e.g. ``{"response_format": {"type": "json_object"}}``).
         """
         payload = self._build_payload(system, user, extra)
-        body = await self.client.post_json("chat/completions", payload, timeout=self.timeout)
-        return _extract_content(body)
+        return await self._chat(payload)
 
     async def complete_json(
         self,
@@ -109,13 +109,28 @@ class FireworksLLM:
             user,
             {**(extra or {}), "response_format": {"type": "json_object"}},
         )
-        body = await self.client.post_json("chat/completions", payload, timeout=self.timeout)
-        content = _extract_content(body)
+        content = await self._chat(payload)
         return _parse_and_validate(content, schema)
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @observe("llm", name="chat_completion")
+    async def _chat(self, payload: dict[str, Any]) -> str:
+        body = await self.client.post_json("chat/completions", payload, timeout=self.timeout)
+        content = _extract_content(body)
+        update_llm(
+            model=self.model,
+            usage=body.get("usage") if isinstance(body.get("usage"), dict) else None,
+            input=payload["messages"][-1]["content"],
+            output=content,
+            json_mode="response_format" in payload,
+            reasoning_effort=payload.get("reasoning_effort"),
+            max_tokens=payload.get("max_tokens"),
+            finish_reason=_finish_reason(body),
+        )
+        return content
 
     def _build_payload(
         self, system: str, user: str, extra: dict[str, Any] | None
@@ -153,6 +168,13 @@ def _extract_content(body: dict[str, Any]) -> str:
             f"Expected string content in chat-completions response, got {type(content).__name__}"
         )
     return content.strip()
+
+
+def _finish_reason(body: dict[str, Any]) -> str | None:
+    try:
+        return body["choices"][0].get("finish_reason")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
 
 
 def _parse_and_validate(content: str, schema: type[BaseModel]) -> BaseModel:

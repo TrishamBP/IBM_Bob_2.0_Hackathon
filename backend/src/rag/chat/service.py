@@ -27,7 +27,14 @@ from typing import Any
 
 import numpy as np
 
-from src.rag.chat.context import FollowUpResolver, format_history, history_window, make_title
+from src.observability import observe, update_retriever, update_span, update_trace
+from src.rag.chat.context import (
+    FollowUpResolver,
+    ResolvedQuery,
+    format_history,
+    history_window,
+    make_title,
+)
 from src.rag.chat.schemas import (
     ChatMessage,
     ChatStreamRequest,
@@ -149,6 +156,7 @@ class ChatService:
 
     # ------------------------------------------------------------------ streaming
 
+    @observe("agent", name="chat_turn", root=True)
     async def stream(
         self,
         request: ChatStreamRequest,
@@ -159,6 +167,15 @@ class ChatService:
         started = time.perf_counter()
         timings: dict[str, float] = {}
         conversation_id = request.conversation_id
+        # The employee email is deliberately kept out of traces.
+        update_span(input=request.message)
+        update_trace(
+            name="chat_turn",
+            input=request.message,
+            thread_id=conversation_id,
+            outcome="cancelled",
+            follow_up=conversation_id is not None,
+        )
         if conversation_id and conversation_id in self._active:
             yield sse_event(
                 "error",
@@ -187,6 +204,11 @@ class ChatService:
             conversation_id = conversation.id
             self._active.add(conversation_id)
             user_msg, assistant = conversation.messages[-2], conversation.messages[-1]
+            update_trace(
+                thread_id=conversation_id,
+                assistant_message_id=assistant.id,
+                history_messages=len(history),
+            )
             yield sse_event(
                 "session",
                 {
@@ -204,13 +226,13 @@ class ChatService:
             if history:
                 yield _status("resolving_context", "Understanding your follow-up question")
             t = time.perf_counter()
-            resolved = await self.resolver.resolve(request.message, history)
+            resolved = await self._resolve(request.message, history)
             timings["resolve_ms"] = _ms(t)
 
             # 3. routing (the query embedding is computed once and reused)
             yield _status("routing", "Identifying the relevant department")
             t = time.perf_counter()
-            query_vector = await self.embedder.embed_query(resolved.query)
+            query_vector = await self._embed_query(resolved.query)
             route, route_error = await self._route(resolved.query, query_vector)
             departments = plan_departments(
                 route,
@@ -244,9 +266,7 @@ class ChatService:
             # 6. hybrid retrieval
             t = time.perf_counter()
             expansions_used = expansion.queries if vectors.expansions.size else []
-            retrieval = await self.retriever.retrieve(
-                resolved.query, expansions_used, vectors, departments
-            )
+            retrieval = await self._retrieve(resolved.query, expansions_used, vectors, departments)
             timings["retrieval_ms"] = _ms(t)
             if await _gone(is_disconnected):
                 return
@@ -289,6 +309,17 @@ class ChatService:
                 final_sources = [SourceRef(**by_id[c].public()) for c in check.cited]
 
             yield sse_event("sources", {"sources": [s.model_dump() for s in final_sources]})
+            update_span(output=final_content)
+            update_trace(
+                output=final_content,
+                retrieval_context=[_evidence(s) for s in sources],
+                outcome="answered" if sources else "no_evidence",
+                cited_sources=[f"{s.id} {s.reference}" for s in final_sources],
+                invalid_citations=invalid,
+                context_sources=len(sources),
+                finish_reason=stats.finish_reason,
+                usage=stats.usage,
+            )
             assistant_id = assistant.id
             await self._finish(
                 conversation_id, assistant_id, "completed", final_content, final_sources, None
@@ -296,6 +327,35 @@ class ChatService:
             persisted = True
             final_status = "completed"
             timings["total_ms"] = _ms(started)
+            diagnostics = self._diagnostics(
+                resolved,
+                route,
+                route_error,
+                departments,
+                expansion,
+                hyde,
+                embed_error,
+                retrieval,
+                sources,
+                stats,
+                timings,
+            )
+            update_trace(
+                resolved_query=resolved.query if resolved.query != request.message else None,
+                primary_department=primary,
+                selected_departments=(route or {}).get("selected_departments"),
+                filter_departments=departments,
+                retrieval_sufficient=retrieval.sufficient,
+                retrieval_reason=retrieval.reason,
+                retrieved_chunks=len(retrieval.chunks),
+                # IDs only (no text), in rank order, for offline retrieval metrics.
+                retrieved_chunk_ids=[c.id for c in retrieval.chunks],
+                retrieved_document_ids=[c.document_id for c in retrieval.chunks],
+                context_chunk_ids=[s.chunk_id for s in sources],
+                source_departments=sorted({s.department for s in sources}),
+                timings=timings,
+                diagnostics=diagnostics,
+            )
             yield sse_event(
                 "completed",
                 {
@@ -304,23 +364,12 @@ class ChatService:
                     "content": final_content,
                     "sources": [s.model_dump() for s in final_sources],
                     "invalid_citations": invalid,
-                    "diagnostics": self._diagnostics(
-                        resolved,
-                        route,
-                        route_error,
-                        departments,
-                        expansion,
-                        hyde,
-                        embed_error,
-                        retrieval,
-                        sources,
-                        stats,
-                        timings,
-                    ),
+                    "diagnostics": diagnostics,
                 },
             )
         except ConversationAccessError:
             final_status = "failed"
+            update_trace(outcome="not_found")
             yield sse_event("error", {"code": "not_found", "message": "Conversation not found."})
         except (asyncio.CancelledError, GeneratorExit):
             final_status = "cancelled"
@@ -329,6 +378,7 @@ class ChatService:
             logger.exception("Chat turn failed")
             final_status = "failed"
             final_error = user_safe_error(exc)
+            update_trace(outcome="failed", error=f"{type(exc).__name__}: {str(exc)[:300]}")
             yield sse_event(
                 "error",
                 {
@@ -383,7 +433,44 @@ class ChatService:
         conversation = await self.storage.update(request.conversation_id, add)
         return conversation, history
 
+    @observe("tool", name="followup_resolution")
+    async def _resolve(self, message: str, history: list[ChatMessage]) -> ResolvedQuery:
+        resolved = await self.resolver.resolve(message, history)
+        update_span(
+            input=message,
+            output=resolved.query,
+            method=resolved.method,
+            history_messages=len(history),
+            error=resolved.error,
+        )
+        return resolved
+
+    @observe("tool", name="query_embedding")
+    async def _embed_query(self, query: str) -> np.ndarray:
+        update_span(input=query, output="query vector")
+        return await self.embedder.embed_query(query)
+
+    @observe("tool", name="department_routing")
     async def _route(
+        self, query: str, vector: np.ndarray
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        route, error = await self._route_inner(query, vector)
+        predictions = (route or {}).get("predictions") or []
+        route_diag = (route or {}).get("diagnostics") or {}
+        update_span(
+            input=query,
+            output=(route or {}).get("primary_department") or f"unrouted ({error})",
+            method="fusion" if self.fusion is not None else "xgboost",
+            selected=(route or {}).get("selected_departments"),
+            top3=[f"{p['department']}={p.get('final_score') or 0:.2f}" for p in predictions[:3]],
+            evidence_used=route_diag.get("evidence_used"),
+            fallback_used=route_diag.get("fallback_used"),
+            reranker_error=route_diag.get("reranker_error"),
+            error=error,
+        )
+        return route, error
+
+    async def _route_inner(
         self, query: str, vector: np.ndarray
     ) -> tuple[dict[str, Any] | None, str | None]:
         try:
@@ -407,6 +494,7 @@ class ChatService:
             return None, type(exc).__name__
         return None, "router unavailable"
 
+    @observe("tool", name="query_preprocessing")
     async def _expand(
         self,
         query: str,
@@ -414,6 +502,7 @@ class ChatService:
         alternatives: list[str],
         history: list[ChatMessage],
     ) -> tuple[QueryExpansionResult, HyDEResult]:
+        update_span(input=query, department=department, alternatives=alternatives)
         if self.preprocess_llm is None:
             skipped = "DeepSeek preprocessing is disabled"
             return (
@@ -422,35 +511,61 @@ class ChatService:
             )
         context = format_history(history[-4:], max_chars=300) if history else None
         department = department or "General onboarding"
-        tasks: list[Awaitable[Any]] = [
-            expand_query(
-                self.preprocess_llm,
-                query,
-                department,
-                alternative_departments=alternatives or None,
-                n=self.config.expansion_count,
-                conversation_context=context,
-                extra=self.preprocess_extra,
-            )
-        ]
+        tasks: list[Awaitable[Any]] = [self._expansion(query, department, alternatives, context)]
         if self.config.hyde_enabled:
-            tasks.append(
-                generate_hyde(
-                    self.preprocess_llm,
-                    None,  # embedded below together with the expansions
-                    query,
-                    department,
-                    conversation_context=context,
-                    extra=self.preprocess_extra,
-                )
-            )
+            tasks.append(self._hyde(query, department, context))
         results = await asyncio.gather(*tasks)
         hyde = results[1] if len(results) > 1 else HyDEResult(status=StageStatus.SKIPPED)
+        update_span(output=f"expansion={results[0].status} hyde={hyde.status}")
         return results[0], hyde
 
+    @observe("tool", name="query_expansion")
+    async def _expansion(
+        self, query: str, department: str, alternatives: list[str], context: str | None
+    ) -> QueryExpansionResult:
+        result = await expand_query(
+            self.preprocess_llm,
+            query,
+            department,
+            alternative_departments=alternatives or None,
+            n=self.config.expansion_count,
+            conversation_context=context,
+            extra=self.preprocess_extra,
+        )
+        update_span(
+            input=query,
+            output=" | ".join(result.queries),
+            status=str(result.status),
+            count=len(result.queries),
+            error=result.error,
+        )
+        return result
+
+    @observe("tool", name="hyde")
+    async def _hyde(self, query: str, department: str, context: str | None) -> HyDEResult:
+        result = await generate_hyde(
+            self.preprocess_llm,
+            None,  # embedded below together with the expansions
+            query,
+            department,
+            conversation_context=context,
+            extra=self.preprocess_extra,
+        )
+        document = result.hypothetical_document or ""
+        update_span(
+            input=query,
+            output=document,
+            status=str(result.status),
+            words=len(document.split()),
+            error=result.error,
+        )
+        return result
+
+    @observe("tool", name="expansion_embedding")
     async def _embed_inputs(
         self, query_vector: np.ndarray, expansion: QueryExpansionResult, hyde: HyDEResult
     ) -> tuple[QueryVectors, str | None]:
+        update_span(input="expansions + HyDE document", output="query vectors")
         dims = self.embedder.dimensions
         queries = expansion.queries if expansion.status == StageStatus.COMPLETED else []
         hyde_doc = hyde.hypothetical_document if hyde.status == StageStatus.COMPLETED else ""
@@ -470,6 +585,40 @@ class ChatService:
         expansions = matrix[: len(queries)]
         hyde_vector = matrix[len(queries)] if hyde_doc else None
         return QueryVectors(query_vector, expansions, hyde_vector), None
+
+    @observe("retriever", name="hybrid_retrieval")
+    async def _retrieve(
+        self,
+        query: str,
+        expansions: list[str],
+        vectors: QueryVectors,
+        departments: list[str] | None,
+    ) -> RetrievalResult:
+        config = getattr(self.retriever, "config", None)
+        update_retriever(
+            embedder=getattr(self.embedder, "model", None),
+            top_k=getattr(config, "top_k", None),
+        )
+        result = await self.retriever.retrieve(query, expansions, vectors, departments)
+        # Chunk text is kept for evaluation only; the terminal shows titles.
+        update_span(
+            input=query,
+            output=[
+                f"{c.metadata.get('title', '?')} ({c.metadata.get('department', '?')})"
+                for c in result.chunks[:5]
+            ],
+            retrieval_context=[c.text for c in result.chunks],
+            chunks=len(result.chunks),
+            documents=len({c.document_id for c in result.chunks}),
+            sufficient=result.sufficient,
+            reason=result.reason,
+            departments=result.departments,
+            attempts=len(result.attempts),
+            expansions=len(expansions),
+            hyde=vectors.hyde is not None,
+            top_similarity=max((c.evidence_similarity for c in result.chunks), default=None),
+        )
+        return result
 
     def _messages(
         self,
@@ -573,6 +722,10 @@ class ChatService:
             "usage": stats.usage,
             "timings": timings,
         }
+
+
+def _evidence(source: Source) -> str:
+    return f"[{source.citation_id}] {source.reference}\n{source.text}"
 
 
 def _status(stage: str, message: str, **extra: Any) -> str:

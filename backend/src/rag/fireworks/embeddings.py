@@ -17,6 +17,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from src.observability import observe, update_span
 from src.rag.fireworks.client import FireworksClient, FireworksResponseError
 
 
@@ -55,7 +56,16 @@ class FireworksEmbeddings:
     async def embed_documents(self, documents: Sequence[str]) -> np.ndarray:
         return await self._embed(list(documents))
 
+    @observe("tool", name="embeddings")
     async def _embed(self, texts: list[str]) -> np.ndarray:
+        # Span input/output are summaries: texts may be confidential document chunks.
+        update_span(
+            input=f"{len(texts)} text(s)",
+            output=f"{len(texts)}x{self.dimensions} vectors",
+            model=self.model,
+            texts=len(texts),
+            dimensions=self.dimensions,
+        )
         if not texts:
             return np.empty((0, self.dimensions), dtype=np.float32)
         for i, text in enumerate(texts):

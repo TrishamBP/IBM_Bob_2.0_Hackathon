@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import get_settings
 from src.middleware import BodySizeLimitMiddleware
+from src.observability import configure_tracing
 from src.rag.chat.router import router as chat_router
 from src.rag.chat.storage import ChatStorage
 from src.rag.routes import router as rag_router
@@ -18,6 +19,11 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    configure_tracing(
+        enabled=settings.tracing_enabled,
+        terminal=settings.tracing_terminal,
+        preview_chars=settings.tracing_preview_chars,
+    )
     app.state.rag = await create_services(settings)
     # Conversation history stays readable even when the AI service is not configured.
     app.state.chat = app.state.rag.chat if app.state.rag else None

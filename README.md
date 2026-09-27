@@ -4,6 +4,20 @@
 semantic document ingestion, department-aware routing and retrieval-augmented
 generation.**
 
+## IBM Bob Session Screenshots
+
+![alt text](image.png)
+
+![alt text](image-1.png)
+
+![alt text](image-2.png)
+
+![alt text](image-3.png)
+
+![alt text](image-4.png)
+
+![alt text](image-5.png)
+
 ## Table of contents
 
 - [Short description](#short-description)
@@ -372,17 +386,17 @@ cd frontend && npm run lint && npx tsc --noEmit && npm run build
 
 ## API overview
 
-| Method | Route | Purpose |
-|---|---|---|
-| GET | `/health` | Liveness check |
-| POST | `/api/v1/rag/upload` | Upload ≤ 10 documents for one department (multipart `department`, `files`) |
-| POST | `/api/v1/rag/route` | Fused department routing for a query (inspection / debugging) |
-| POST | `/api/v1/chat` | Create a conversation |
-| GET | `/api/v1/chat?employee_email=` | List an employee's conversations |
-| GET | `/api/v1/chat/{id}?employee_email=` | Get a conversation with its messages |
-| PATCH | `/api/v1/chat/{id}` | Rename a conversation |
-| DELETE | `/api/v1/chat/{id}?employee_email=` | Delete a conversation |
-| POST | `/api/v1/chat/stream` | Ask a question; streamed answer as Server-Sent Events |
+| Method | Route                               | Purpose                                                                    |
+| ------ | ----------------------------------- | -------------------------------------------------------------------------- |
+| GET    | `/health`                           | Liveness check                                                             |
+| POST   | `/api/v1/rag/upload`                | Upload ≤ 10 documents for one department (multipart `department`, `files`) |
+| POST   | `/api/v1/rag/route`                 | Fused department routing for a query (inspection / debugging)              |
+| POST   | `/api/v1/chat`                      | Create a conversation                                                      |
+| GET    | `/api/v1/chat?employee_email=`      | List an employee's conversations                                           |
+| GET    | `/api/v1/chat/{id}?employee_email=` | Get a conversation with its messages                                       |
+| PATCH  | `/api/v1/chat/{id}`                 | Rename a conversation                                                      |
+| DELETE | `/api/v1/chat/{id}?employee_email=` | Delete a conversation                                                      |
+| POST   | `/api/v1/chat/stream`               | Ask a question; streamed answer as Server-Sent Events                      |
 
 Request and response details are in the
 [backend API reference](backend/README.md#25-api-endpoint-reference).
@@ -391,12 +405,12 @@ Request and response details are in the
 
 > Screenshots of the application have not been added to the repository yet.
 
-| View | Screenshot |
-|---|---|
-| Landing page | _Placeholder: `docs/images/landing.png`_ |
-| HR dashboard | _Placeholder: `docs/images/hr-dashboard.png`_ |
-| Document upload modal | _Placeholder: `docs/images/upload-modal.png`_ |
-| Employee chatbot | _Placeholder: `docs/images/employee-chat.png`_ |
+| View                        | Screenshot                                     |
+| --------------------------- | ---------------------------------------------- |
+| Landing page                | _Placeholder: `docs/images/landing.png`_       |
+| HR dashboard                | _Placeholder: `docs/images/hr-dashboard.png`_  |
+| Document upload modal       | _Placeholder: `docs/images/upload-modal.png`_  |
+| Employee chatbot            | _Placeholder: `docs/images/employee-chat.png`_ |
 | RAG response with citations | _Placeholder: `docs/images/rag-citations.png`_ |
 
 ## Limitations
